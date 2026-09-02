@@ -1,7 +1,14 @@
 [project]
 name = "soundboard-design"
-version = "0.1.0"
-description = "Add your description here"
+version = "1.0.0"
+description = "Palettes sonores cohérentes pour systèmes de design : matières physiques, jetons d'interaction, banc d'essai et export"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
