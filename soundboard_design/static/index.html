@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Soundboard Design</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="identity">
+      <span class="identity-name">Soundboard</span>
+      <span class="identity-meta"><span data-panel="token-count">0</span> jetons, <span data-panel="material-count">0</span> matières</span>
+    </div>
+    <button type="button" class="button button-key" data-action="demo">Jouer la démo</button>
+  </div>
+</header>
+
+<main>
+
+  <section class="hero">
+    <div class="scope-frame">
+      <canvas data-panel="scope" aria-hidden="true"></canvas>
+      <p class="readout" data-panel="readout">Touchez un composant pour l'entendre</p>
+    </div>
+
+    <p class="hero-note">
+      Réglez une palette une seule fois, puis essayez-la sur de vrais composants.
+      Une grille de boutons vous dit à quoi ressemble un son ; seul un slider que
+      vous faites glisser vous dit s'il survit à quarante répétitions.
+    </p>
+
+    <div class="bench">
+
+      <article class="bench-cell">
+        <h2>Slider</h2>
+        <p>Un cran par pas, une hauteur qui suit la position, une butée mate aux extrémités.</p>
+        <div class="bench-slider" data-bench="slider" role="slider" tabindex="0"
+             aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="40">
+          <div class="bench-slider-fill"></div>
+          <div class="bench-slider-handle"></div>
+        </div>
+        <span class="bench-value" data-bench-readout="slider">40 %</span>
+      </article>
+
+      <article class="bench-cell">
+        <h2>Carrousel</h2>
+        <p>La hauteur monte avec l'index. Coupez la boucle pour entendre la fin de liste.</p>
+        <div class="bench-carousel" data-bench="carousel">
+          <div class="bench-carousel-strip"></div>
+        </div>
+        <div class="bench-row">
+          <button type="button" class="button button-quiet" data-bench-action="carousel-previous">Précédent</button>
+          <button type="button" class="button button-quiet" data-bench-action="carousel-next">Suivant</button>
+          <button type="button" class="chip chip-small" data-bench-action="carousel-loop" aria-pressed="true">Boucle</button>
+          <span class="bench-value" data-bench-readout="carousel">1 / 6</span>
+        </div>
+      </article>
+
+      <article class="bench-cell">
+        <h2>Déplis</h2>
+        <p>Trois notes le long du déroulé, inversées à la fermeture. La durée du son tombe avec la fin de l'animation.</p>
+        <div class="bench-disclosure" data-bench="disclosure">
+          <div class="bench-disclosure-item">
+            <button type="button" class="bench-disclosure-trigger" aria-expanded="false">Livraison</button>
+            <div class="bench-disclosure-body"><p>Expédié sous deux jours ouvrés, suivi inclus.</p></div>
+          </div>
+          <div class="bench-disclosure-item">
+            <button type="button" class="bench-disclosure-trigger" aria-expanded="false">Paiement</button>
+            <div class="bench-disclosure-body"><p>Carte, virement ou prélèvement mensuel.</p></div>
+          </div>
+          <div class="bench-disclosure-item">
+            <button type="button" class="bench-disclosure-trigger" aria-expanded="false">Retours</button>
+            <div class="bench-disclosure-body"><p>Trente jours pour changer d'avis, frais à notre charge.</p></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="bench-cell">
+        <h2>Appui long</h2>
+        <p>Un son tenu dont la tension monte avec la progression, puis se résout ou retombe.</p>
+        <button type="button" class="bench-press" data-bench="long-press">
+          <span class="bench-press-fill"></span>
+          <span class="bench-press-label">Maintenir pour supprimer</span>
+        </button>
+      </article>
+
+      <article class="bench-cell">
+        <h2>Interrupteur</h2>
+        <p>Deux sons strictement symétriques : le même intervalle, dans un sens puis dans l'autre.</p>
+        <button type="button" class="bench-toggle" data-bench="toggle" role="switch" aria-checked="false">
+          <span class="bench-toggle-track"><span class="bench-toggle-knob"></span></span>
+          <span class="bench-toggle-label">Notifications</span>
+        </button>
+      </article>
+
+      <article class="bench-cell">
+        <h2>Tirer pour rafraîchir</h2>
+        <p>La tension suit la distance parcourue. Passé le seuil, le relâchement résout.</p>
+        <div class="bench-pull" data-bench="pull">
+          <span class="bench-pull-label">Tirez vers le bas</span>
+          <div class="bench-pull-sheet"><span></span><span></span><span></span></div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Ambiance</h2>
+      <p>Onze points de départ, nommés par le produit auquel ils conviennent.</p>
+    </div>
+    <div class="chips" data-panel="presets"></div>
+    <p class="summary" data-panel="preset-summary"></p>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Matière</h2>
+      <p>
+        Chaque matière est un modèle physique : ses modes de vibration, leurs temps
+        d'extinction propres, sa frappe et sa durée naturelle. La tenue vient
+        multiplier cette durée, jamais la remplacer.
+      </p>
+    </div>
+    <div class="material-groups" data-panel="materials"></div>
+    <p class="summary" data-panel="material-description"></p>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Hauteur</h2>
+      <p>
+        Les jetons ne stockent jamais une fréquence, seulement un degré. Changer la
+        fondamentale ou la gamme réécrit tous les sons d'un coup.
+      </p>
+    </div>
+
+    <div class="field">
+      <div class="field-head">
+        <label for="root-input">Fondamentale</label>
+        <span class="value"><span data-panel="root-value">466</span> Hz</span>
+      </div>
+      <p class="hint">
+        Vers l'aigu, les sons se font discrets et incisifs. Vers le grave, ils
+        prennent de la présence et couvrent la parole.
+      </p>
+      <input type="range" id="root-input" data-panel="root-input" min="160" max="920" step="1" value="466">
+      <div class="range-ends">
+        <span>grave</span>
+        <span class="note-name" data-panel="root-note"></span>
+        <span>aigu</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="field-head"><label>Gamme</label></div>
+      <div class="chips" data-panel="scales"></div>
+      <p class="summary" data-panel="scale-description"></p>
+    </div>
+
+    <div class="field">
+      <div class="field-head"><label>Accord</label></div>
+      <p class="hint">
+        Juste : des rapports entiers, les harmoniques coïncident et rien ne bat.
+        Tempéré : l'accordage du piano, un rien plus tendu.
+      </p>
+      <div class="chips" data-panel="temperaments"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Caractère</h2>
+      <p>Six réglages qui s'appliquent à tous les jetons en même temps.</p>
+    </div>
+    <div class="character-grid" data-panel="character"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Bibliothèque</h2>
+      <p>
+        Touchez un jeton pour l'entendre, WAV pour l'exporter. Les étiquettes
+        n'apparaissent que lorsqu'elles changent quelque chose : rafale pour les sons
+        déclenchés en série, tenu pour ceux qui durent le temps du geste.
+      </p>
+    </div>
+    <div data-panel="library"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Export</h2>
+      <p>
+        Le JSON contient les fréquences, décalages, durées et gains calculés pour vos
+        réglages, plus la définition de la matière : de quoi rejouer la palette dans
+        n'importe quel moteur. Les WAV sont rendus hors ligne et sans normalisation,
+        pour conserver la hiérarchie de volume entre les jetons.
+      </p>
+    </div>
+    <div class="bench-row">
+      <button type="button" class="button" data-action="export-json">Télécharger la palette (JSON)</button>
+      <button type="button" class="button" data-action="export-wav">Télécharger tous les WAV</button>
+    </div>
+  </section>
+
+</main>
+
+<script type="module" src="/static/js/main.js"></script>
+</body>
+</html>
