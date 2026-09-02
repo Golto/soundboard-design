@@ -1,7 +1,7 @@
 /**
  * The synthesis engine.
  *
- * Every material is rendered by one of six voice builders. They all share
+ * Every material is rendered by one of five voice builders. They all share
  * the same output stage so that a change of grain, weight or brightness
  * behaves identically whatever the material, and the same code path is
  * used for live playback and for offline WAV rendering.
@@ -213,7 +213,10 @@ function buildFmVoice(context, target, spec) {
 
   const modulationDepth = context.createGain();
   const index =
-    spec.frequency * voice.modulationIndex * clamp(spec.brightness, 0.15, 2.2) * (1 + spec.grain * 0.7);
+    spec.frequency *
+    voice.modulationIndex *
+    clamp(spec.brightness, 0.15, 2.2) *
+    (1 + spec.grain * 0.7);
   modulationDepth.gain.setValueAtTime(index, spec.time);
   modulationDepth.gain.exponentialRampToValueAtTime(
     Math.max(1, index * 0.03),
@@ -230,119 +233,143 @@ function buildFmVoice(context, target, spec) {
   modulator.stop(spec.time + spec.duration + 0.05);
 }
 
-function buildStringVoice(context, target, spec) {
-  const { voice } = spec.material;
+/**
+ * Automate an oscillator along the sweep described by a chirp voice.
+ *
+ * The multiplier lets a harmonic oscillator follow exactly the same
+ * trajectory an octave above without duplicating the shape logic.
+ *
+ * @param {OscillatorNode} oscillator Oscillator to automate.
+ * @param {object} voice Chirp voice parameters.
+ * @param {number} frequency Frequency of the scale degree being played.
+ * @param {number} startTime Absolute start time of the syllable.
+ * @param {number} sweepSeconds Length of the sweep.
+ * @param {number} multiplier Ratio applied to every frequency value.
+ */
+function applySweep(oscillator, voice, frequency, startTime, sweepSeconds, multiplier) {
+  const low = (frequency / voice.depth) * multiplier;
+  const high = frequency * voice.depth * multiplier;
+  const base = frequency * multiplier;
 
-  // NOTE: above the material ceiling the delay line gets too short to stay
-  // stable, so the note is folded down by octaves instead of being clipped.
-  let frequency = spec.frequency;
-  while (frequency > voice.maxFrequency) {
-    frequency /= 2;
+  if (voice.shape === "rise") {
+    oscillator.frequency.setValueAtTime(base, startTime);
+    oscillator.frequency.exponentialRampToValueAtTime(high, startTime + sweepSeconds);
+  } else if (voice.shape === "rise_to") {
+    // NOTE: the pitch a listener retains is the one the sweep settles on, so
+    // a body that keeps ringing has to arrive on the degree, not leave from it.
+    oscillator.frequency.setValueAtTime(low, startTime);
+    oscillator.frequency.exponentialRampToValueAtTime(base, startTime + sweepSeconds);
+  } else if (voice.shape === "fall") {
+    oscillator.frequency.setValueAtTime(high, startTime);
+    oscillator.frequency.exponentialRampToValueAtTime(base, startTime + sweepSeconds);
+  } else {
+    oscillator.frequency.setValueAtTime(base, startTime);
+    oscillator.frequency.exponentialRampToValueAtTime(high, startTime + sweepSeconds * 0.4);
+    oscillator.frequency.exponentialRampToValueAtTime(base * 0.7, startTime + sweepSeconds);
   }
-
-  const delay = context.createDelay(0.05);
-  delay.delayTime.value = 1 / frequency;
-
-  const damping = context.createBiquadFilter();
-  damping.type = "lowpass";
-  damping.frequency.value = clamp(frequency * voice.dampingRatio * spec.brightness, 300, 16000);
-
-  const feedback = context.createGain();
-  const periods = Math.max(4, spec.duration * frequency);
-  const feedbackGain = Math.min(0.995, Math.pow(0.001, 1 / periods));
-  feedback.gain.setValueAtTime(feedbackGain, spec.time);
-  feedback.gain.setValueAtTime(feedbackGain, spec.time + spec.duration);
-  feedback.gain.linearRampToValueAtTime(0, spec.time + spec.duration + 0.08);
-
-  delay.connect(damping);
-  damping.connect(feedback);
-  feedback.connect(delay);
-
-  const excitation = context.createBufferSource();
-  excitation.buffer = whiteNoiseBuffer(context);
-  const excitationGain = context.createGain();
-  excitationGain.gain.setValueAtTime(spec.gain * 1.4, spec.time);
-  excitationGain.gain.setValueAtTime(0, spec.time + voice.excitationSeconds);
-  excitation.connect(excitationGain);
-  excitationGain.connect(delay);
-
-  const output = context.createGain();
-  output.gain.setValueAtTime(1, spec.time);
-  output.gain.setValueAtTime(1, spec.time + spec.duration * 0.85);
-  output.gain.exponentialRampToValueAtTime(0.0001, spec.time + spec.duration + 0.06);
-  delay.connect(output);
-  output.connect(target);
-
-  excitation.start(spec.time);
-  excitation.stop(spec.time + voice.excitationSeconds + 0.02);
-
-  return () => {
-    feedback.disconnect();
-    delay.disconnect();
-    damping.disconnect();
-    output.disconnect();
-  };
 }
 
-function buildChirpVoice(context, target, spec) {
+/**
+ * Envelope a chirp syllable, optionally holding its level across the sweep.
+ *
+ * With no hold the level collapses from the first millisecond, so only the
+ * departure pitch is heard. That is exactly right for a bubble and exactly
+ * wrong for a call, whose sweep would otherwise happen in silence.
+ *
+ * @param {AudioParam} parameter Gain parameter to automate.
+ * @param {number} time Absolute start time.
+ * @param {number} attack Attack duration.
+ * @param {number} peak Peak level.
+ * @param {number} duration Total syllable duration.
+ * @param {number} holdRatio Fraction of the duration spent at full level.
+ */
+function applyChirpEnvelope(parameter, time, attack, peak, duration, holdRatio) {
+  const level = Math.max(0.002, peak);
+  parameter.setValueAtTime(0.0001, time);
+  parameter.exponentialRampToValueAtTime(level, time + attack);
+
+  if (holdRatio > 0) {
+    const holdUntil = clamp(duration * holdRatio, attack + 0.005, duration * 0.9);
+    parameter.exponentialRampToValueAtTime(level * 0.92, time + holdUntil);
+  }
+
+  parameter.exponentialRampToValueAtTime(0.0001, time + duration);
+}
+
+/**
+ * Schedule one syllable of a chirp material.
+ *
+ * @param {BaseAudioContext} context Audio context.
+ * @param {AudioNode} target Node the syllable feeds.
+ * @param {object} spec Resolved note parameters.
+ * @param {number} startTime Absolute start time of this syllable.
+ * @param {number} gain Level of this syllable.
+ * @param {number} detuneCents Pitch offset of this syllable.
+ */
+function scheduleChirpSyllable(context, target, spec, startTime, gain, detuneCents) {
   const { voice } = spec.material;
-  const sweepSeconds = Math.max(0.01, spec.duration * voice.timeRatio);
-  const peak = spec.frequency * voice.depth;
+  const sweepSeconds = Math.max(0.008, spec.duration * voice.timeRatio);
+  const stopTime = startTime + spec.duration + 0.05;
+
+  const envelope = context.createGain();
+  applyChirpEnvelope(
+    envelope.gain,
+    startTime,
+    spec.attack,
+    gain,
+    spec.duration,
+    voice.holdRatio,
+  );
+  envelope.connect(target);
 
   const oscillator = context.createOscillator();
   oscillator.type = voice.waveform;
+  oscillator.detune.setValueAtTime(detuneCents, startTime);
+  applySweep(oscillator, voice, spec.frequency, startTime, sweepSeconds, 1);
+  oscillator.connect(envelope);
+  oscillator.start(startTime);
+  oscillator.stop(stopTime);
 
-  if (voice.shape === "rise") {
-    oscillator.frequency.setValueAtTime(spec.frequency, spec.time);
-    oscillator.frequency.exponentialRampToValueAtTime(peak, spec.time + sweepSeconds);
-  } else if (voice.shape === "fall") {
-    oscillator.frequency.setValueAtTime(peak, spec.time);
-    oscillator.frequency.exponentialRampToValueAtTime(spec.frequency, spec.time + sweepSeconds);
-  } else {
-    oscillator.frequency.setValueAtTime(spec.frequency, spec.time);
-    oscillator.frequency.exponentialRampToValueAtTime(peak, spec.time + sweepSeconds * 0.4);
-    oscillator.frequency.exponentialRampToValueAtTime(
-      spec.frequency * 0.85,
-      spec.time + sweepSeconds,
-    );
+  if (voice.harmonicGain > 0) {
+    const harmonic = context.createOscillator();
+    harmonic.type = "sine";
+    harmonic.detune.setValueAtTime(detuneCents, startTime);
+    applySweep(harmonic, voice, spec.frequency, startTime, sweepSeconds, 2);
+    const harmonicGain = context.createGain();
+    harmonicGain.gain.value = voice.harmonicGain;
+    harmonic.connect(harmonicGain);
+    harmonicGain.connect(envelope);
+    harmonic.start(startTime);
+    harmonic.stop(stopTime);
   }
 
   if (voice.vibratoHz > 0 && voice.vibratoCents > 0) {
     const vibrato = context.createOscillator();
     vibrato.type = "sine";
-    vibrato.frequency.setValueAtTime(voice.vibratoHz, spec.time);
+    vibrato.frequency.setValueAtTime(voice.vibratoHz, startTime);
     const vibratoDepth = context.createGain();
-    vibratoDepth.gain.setValueAtTime(voice.vibratoCents, spec.time);
+    vibratoDepth.gain.setValueAtTime(voice.vibratoCents, startTime);
     vibrato.connect(vibratoDepth);
     vibratoDepth.connect(oscillator.detune);
-    vibrato.start(spec.time);
-    vibrato.stop(spec.time + spec.duration + 0.05);
+    vibrato.start(startTime);
+    vibrato.stop(stopTime);
   }
+}
 
-  const envelope = context.createGain();
-  applyDecayEnvelope(envelope.gain, spec.time, spec.attack, spec.gain, spec.duration);
-  oscillator.connect(envelope);
-  envelope.connect(target);
-  oscillator.start(spec.time);
-  oscillator.stop(spec.time + spec.duration + 0.05);
+function buildChirpVoice(context, target, spec) {
+  const { voice } = spec.material;
+  const repeats = Math.max(1, voice.repeats);
+  const stride = spec.duration * (1 + voice.repeatGap);
 
-  if (voice.tailGain > 0) {
-    const tail = context.createOscillator();
-    tail.type = "sine";
-    tail.frequency.setValueAtTime(peak, spec.time);
-    const tailEnvelope = context.createGain();
-    const tailDuration = spec.duration * 2.2;
-    applyDecayEnvelope(
-      tailEnvelope.gain,
-      spec.time + sweepSeconds * 0.6,
-      0.01,
-      spec.gain * voice.tailGain,
-      tailDuration,
+  for (let index = 0; index < repeats; index += 1) {
+    scheduleChirpSyllable(
+      context,
+      target,
+      spec,
+      spec.time + index * stride,
+      spec.gain * Math.pow(0.76, index),
+      index * -70,
     );
-    tail.connect(tailEnvelope);
-    tailEnvelope.connect(target);
-    tail.start(spec.time);
-    tail.stop(spec.time + sweepSeconds * 0.6 + tailDuration + 0.05);
   }
 }
 
@@ -420,7 +447,6 @@ function buildWaveVoice(context, target, spec) {
 const VOICE_BUILDERS = {
   modal: buildModalVoice,
   fm: buildFmVoice,
-  string: buildStringVoice,
   chirp: buildChirpVoice,
   noise: buildNoiseVoice,
   wave: buildWaveVoice,
@@ -436,7 +462,6 @@ const VOICE_BUILDERS = {
  * @param {BaseAudioContext} context Live or offline audio context.
  * @param {AudioNode} destination Bus input to feed.
  * @param {object} spec Fully resolved note parameters.
- * @returns {Function|null} An optional teardown for feedback based voices.
  */
 export function scheduleNote(context, destination, spec) {
   const { material } = spec;
@@ -470,7 +495,7 @@ export function scheduleNote(context, destination, spec) {
   lowpass.frequency.setValueAtTime(cutoff, spec.time);
   lowpass.frequency.exponentialRampToValueAtTime(
     Math.max(130, cutoff * 0.3),
-    spec.time + spec.duration,
+    spec.time + spec.audible,
   );
   lowpass.connect(entry);
 
@@ -478,7 +503,7 @@ export function scheduleNote(context, destination, spec) {
   trim.gain.value = material.gainTrim;
   trim.connect(lowpass);
 
-  const teardown = VOICE_BUILDERS[material.engine](context, trim, spec);
+  VOICE_BUILDERS[material.engine](context, trim, spec);
 
   if (spec.weight > 0.02) {
     const sub = context.createOscillator();
@@ -511,7 +536,8 @@ export function scheduleNote(context, destination, spec) {
     );
     band.Q.value = material.transient.resonance + spec.grain * 1.2;
     const impactGain = context.createGain();
-    const impactDecay = material.transient.decaySeconds * (1 + spec.grain * 0.8) * (1 + spec.weight * 0.5);
+    const impactDecay =
+      material.transient.decaySeconds * (1 + spec.grain * 0.8) * (1 + spec.weight * 0.5);
     impactGain.gain.setValueAtTime(0.0001, spec.time);
     impactGain.gain.exponentialRampToValueAtTime(
       Math.max(0.002, 0.2 * impactAmount * spec.gain),
@@ -550,8 +576,22 @@ export function scheduleNote(context, destination, spec) {
     source.start(spec.time);
     source.stop(spec.time + breathDuration + 0.04);
   }
+}
 
-  return teardown ?? null;
+/**
+ * Total time a single note stays audible.
+ *
+ * A chirp made of several syllables outlives its nominal duration, and the
+ * offline renderer needs the real figure to size its buffer.
+ *
+ * @param {object} voice Engine specific voice parameters.
+ * @param {number} duration Nominal duration of one syllable.
+ * @returns {number} Audible duration in seconds.
+ */
+function audibleDuration(voice, duration) {
+  const repeats = voice.repeats ?? 1;
+  const repeatGap = voice.repeatGap ?? 0;
+  return duration * (1 + (repeats - 1) * (1 + repeatGap));
 }
 
 /**
@@ -561,21 +601,28 @@ export function scheduleNote(context, destination, spec) {
  * @param {object} material Material in use.
  * @param {object} palette Current palette settings.
  * @param {object} tuning Tuning descriptor.
- * @param {object} options Degree offset, gain scale and variation seed.
+ * @param {object} options Degree offset, gain scale and variation scale.
  * @returns {object[]} Resolved note specifications.
  */
 export function resolveToken(token, material, palette, tuning, options = {}) {
   const degreeOffset = options.degreeOffset ?? 0;
   const gainScale = options.gainScale ?? 1;
   const variation = token.variation * (options.variationScale ?? 1);
+  const registerShift = Math.pow(2, material.octaveShift ?? 0);
 
   return token.notes.map((note) => {
     const detuneRatio = 1 + (Math.random() - 0.5) * variation * 0.03;
     const gainRatio = 1 + (Math.random() - 0.5) * variation * 0.25;
-    const duration =
-      note.durationSeconds * material.durationFactor * palette.hold * (1 + palette.weight * 1.05);
+    const degree = note.degree + degreeOffset;
+    const duration = Math.max(
+      0.04,
+      note.durationSeconds * material.durationFactor * palette.hold * (1 + palette.weight * 1.05),
+    );
     const attack = clamp(
-      note.attackSeconds * material.attackFactor * (1 + palette.weight * 2.6) * (1 - palette.grain * 0.3),
+      note.attackSeconds *
+        material.attackFactor *
+        (1 + palette.weight * 2.6) *
+        (1 - palette.grain * 0.3),
       0.0015,
       duration * 0.5,
     );
@@ -583,9 +630,10 @@ export function resolveToken(token, material, palette, tuning, options = {}) {
     return {
       material,
       offset: note.offsetSeconds,
-      degree: note.degree + degreeOffset,
-      frequency: frequencyForDegree(note.degree + degreeOffset, tuning) * detuneRatio,
-      duration: Math.max(0.04, duration),
+      degree,
+      frequency: frequencyForDegree(degree, tuning) * registerShift * detuneRatio,
+      duration,
+      audible: audibleDuration(material.voice, duration),
       gain: clamp(note.gain * gainRatio * gainScale, 0.005, 1),
       transient: note.transient,
       brightness: note.brightness * palette.brightness,
@@ -598,13 +646,13 @@ export function resolveToken(token, material, palette, tuning, options = {}) {
 }
 
 /**
- * Total audible length of a token, transient tail included.
+ * Total audible length of a token, syllables included.
  *
  * @param {object[]} notes Resolved notes.
  * @returns {number} Duration in seconds.
  */
 export function tokenLength(notes) {
-  return Math.max(...notes.map((note) => note.offset + note.duration)) + 0.05;
+  return Math.max(...notes.map((note) => note.offset + note.audible)) + 0.05;
 }
 
 // ----------------------------------------------------------------
@@ -697,21 +745,17 @@ export class SoundEngine {
 
     const notes = resolveToken(token, this.material, this.palette, this.tuning, options);
     const start = now + 0.015;
-    const teardowns = [];
-
     notes.forEach((note) => {
-      const teardown = scheduleNote(this.context, this.bus.input, { ...note, time: start + note.offset });
-      if (teardown) {
-        teardowns.push(teardown);
-      }
+      scheduleNote(this.context, this.bus.input, { ...note, time: start + note.offset });
     });
 
     this.activeVoices += notes.length;
-    const lifetime = tokenLength(notes);
-    window.setTimeout(() => {
-      this.activeVoices = Math.max(0, this.activeVoices - notes.length);
-      teardowns.forEach((teardown) => teardown());
-    }, (lifetime + 0.4) * 1000);
+    window.setTimeout(
+      () => {
+        this.activeVoices = Math.max(0, this.activeVoices - notes.length);
+      },
+      (tokenLength(notes) + 0.4) * 1000,
+    );
 
     if (this.onTokenPlayed) {
       this.onTokenPlayed(token, notes);
@@ -775,12 +819,6 @@ export class SoundEngine {
     upper.start(time);
     tremolo.start(time);
 
-    const stopAll = (at) => {
-      fundamental.stop(at);
-      upper.stop(at);
-      tremolo.stop(at);
-    };
-
     return {
       update: (progress) => {
         const clamped = clamp(progress, 0, 1);
@@ -797,7 +835,9 @@ export class SoundEngine {
         output.gain.cancelScheduledValues(at);
         output.gain.setValueAtTime(Math.max(0.0002, output.gain.value), at);
         output.gain.exponentialRampToValueAtTime(0.0001, at + 0.08);
-        stopAll(at + 0.12);
+        fundamental.stop(at + 0.12);
+        upper.stop(at + 0.12);
+        tremolo.stop(at + 0.12);
         window.setTimeout(() => output.disconnect(), 400);
       },
     };

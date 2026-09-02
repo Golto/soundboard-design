@@ -1,8 +1,8 @@
 """Ready-made palettes, named after the product they suit.
 
-A preset is a complete answer to the question "what should this product 
-sound like", not a collection of settings. Each one names a kind of 
-product and states the trade-off it makes, so that picking one is a design 
+A preset is a complete answer to the question "what should this product
+sound like", not a collection of settings. Each one names a kind of
+product and states the trade-off it makes, so that picking one is a design
 decision rather than a lucky draw.
 """
 
@@ -73,19 +73,20 @@ NATURE = Preset(
     key="nature",
     label="Nature",
     summary=(
-        "De petits cris d'oiseau sur une gamme ouverte. Chaleureux et vivant, "
-        "à réserver aux interfaces peu sonorisées : ce timbre attire l'oreille."
+        "Des cuicuis de deux syllabes sur une gamme ouverte. Chaleureux et "
+        "vivant, mais à réserver aux interfaces peu sonorisées : ce timbre "
+        "attire l'oreille à chaque fois."
     ),
     palette=Palette(
         material_key="oiseau",
         scale_key="lydien",
-        root_hz=587.0,
+        root_hz=392.0,
         temperament=Temperament.JUST,
-        grain=0.10,
-        weight=0.10,
-        brightness=1.20,
-        hold=0.85,
-        space=0.26,
+        grain=0.05,
+        weight=0.08,
+        brightness=1.10,
+        hold=0.90,
+        space=0.24,
     ),
 )
 
@@ -133,19 +134,19 @@ WORKSHOP = Preset(
     key="atelier",
     label="Atelier",
     summary=(
-        "Corde pincée et grain léger. Chaud et artisanal, pour un outil "
-        "créatif qui veut se sentir manufacturé."
+        "Corde pincée dans le médium, très peu de grain. Chaud et artisanal, "
+        "pour un outil créatif qui veut se sentir manufacturé."
     ),
     palette=Palette(
         material_key="corde",
         scale_key="majeur",
-        root_hz=330.0,
+        root_hz=294.0,
         temperament=Temperament.JUST,
-        grain=0.35,
-        weight=0.35,
-        brightness=0.90,
-        hold=1.10,
-        space=0.18,
+        grain=0.18,
+        weight=0.30,
+        brightness=0.80,
+        hold=1.0,
+        space=0.16,
     ),
 )
 

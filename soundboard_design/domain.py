@@ -36,7 +36,6 @@ class MaterialEngine(Enum):
 
     MODAL = "modal"
     FM = "fm"
-    STRING = "string"
     CHIRP = "chirp"
     NOISE = "noise"
     WAVE = "wave"
@@ -53,9 +52,16 @@ class MaterialFamily(Enum):
 
 
 class ChirpShape(Enum):
-    """Direction of the pitch sweep for chirp materials."""
+    """Direction of the pitch sweep, relative to the note being played.
+
+    Which end of the sweep lands on the scale degree matters. The pitch a
+    listener actually hears is the one the sweep settles on, so a body that
+    keeps ringing after its sweep must arrive on the note rather than leave
+    from it, otherwise it plays a frequency that belongs to no degree.
+    """
 
     RISE = "rise"
+    RISE_TO = "rise_to"
     FALL = "fall"
     ARCH = "arch"
 
@@ -116,7 +122,7 @@ class Partial:
 
 @dataclass(frozen=True)
 class ModalVoice:
-    """A struck body described by its vibration modes.
+    """A struck or plucked body described by its vibration modes.
 
     Args:
         waveform: Shape of every mode oscillator.
@@ -167,33 +173,6 @@ class FmVoice:
 
 
 @dataclass(frozen=True)
-class StringVoice:
-    """Plucked string built as a Karplus-Strong feedback delay line.
-
-    Args:
-        excitation_seconds: Length of the noise burst that excites the loop.
-        damping_ratio: Cutoff of the loop filter relative to the note
-            frequency. Lower values dampen the high modes faster and give a
-            duller, shorter string.
-        max_frequency: Upper frequency bound. Above it the delay line gets
-            too short to be stable, so the note is folded down an octave.
-    """
-
-    engine: ClassVar[MaterialEngine] = MaterialEngine.STRING
-
-    excitation_seconds: float = 0.006
-    damping_ratio: float = 7.0
-    max_frequency: float = 2200.0
-
-    def to_payload(self) -> dict[str, JsonValue]:
-        return {
-            "excitationSeconds": self.excitation_seconds,
-            "dampingRatio": self.damping_ratio,
-            "maxFrequency": self.max_frequency,
-        }
-
-
-@dataclass(frozen=True)
 class ChirpVoice:
     """A sweeping tone, used for bubbles, droplets and bird calls.
 
@@ -201,14 +180,28 @@ class ChirpVoice:
     a bubble: the frequency of a collapsing air pocket climbs as its radius
     shrinks.
 
+    The amplitude envelope decides which part of the sweep is audible. With
+    no hold, the level collapses immediately and only the departure pitch
+    is heard, which is right for a bubble and wrong for a bird call: a call
+    needs its level held across the whole arc, otherwise the sweep happens
+    in silence and the syllable reads as a dull blip.
+
     Args:
         waveform: Shape of the sweeping oscillator.
-        shape: Direction of the sweep.
-        depth: Frequency multiplier reached at the far end of the sweep.
+        shape: Direction of the sweep, relative to the note.
+        depth: Frequency ratio between the two ends of the sweep.
         time_ratio: Fraction of the voice duration spent sweeping.
+        hold_ratio: Fraction of the duration during which the level stays
+            up before the release begins. Zero gives a plain decay.
+        harmonic_gain: Level of a second oscillator tracking the sweep an
+            octave above. A pure sine whistles; a touch of octave gives the
+            voice a throat.
         vibrato_hz: Rate of an optional pitch vibrato, 0 to disable.
         vibrato_cents: Depth of that vibrato.
-        tail_gain: Level of a short resonant tail left once the sweep ends.
+        repeats: Number of syllables. Each one is quieter and slightly
+            lower than the last, which is how a real call is phrased.
+        repeat_gap: Silence between syllables, as a fraction of the
+            syllable duration.
     """
 
     engine: ClassVar[MaterialEngine] = MaterialEngine.CHIRP
@@ -217,9 +210,12 @@ class ChirpVoice:
     shape: ChirpShape
     depth: float
     time_ratio: float = 0.7
+    hold_ratio: float = 0.0
+    harmonic_gain: float = 0.0
     vibrato_hz: float = 0.0
     vibrato_cents: float = 0.0
-    tail_gain: float = 0.0
+    repeats: int = 1
+    repeat_gap: float = 0.0
 
     def to_payload(self) -> dict[str, JsonValue]:
         return {
@@ -227,9 +223,12 @@ class ChirpVoice:
             "shape": self.shape.value,
             "depth": self.depth,
             "timeRatio": self.time_ratio,
+            "holdRatio": self.hold_ratio,
+            "harmonicGain": self.harmonic_gain,
             "vibratoHz": self.vibrato_hz,
             "vibratoCents": self.vibrato_cents,
-            "tailGain": self.tail_gain,
+            "repeats": self.repeats,
+            "repeatGap": self.repeat_gap,
         }
 
 
@@ -293,7 +292,7 @@ class WaveVoice:
         }
 
 
-type VoiceSpec = ModalVoice | FmVoice | StringVoice | ChirpVoice | NoiseVoice | WaveVoice
+type VoiceSpec = ModalVoice | FmVoice | ChirpVoice | NoiseVoice | WaveVoice
 
 
 # ----------------------------------------------------------------
@@ -350,6 +349,10 @@ class Material:
         cutoff_ratio: Low-pass cutoff relative to the note frequency.
         transient: Impact noise description.
         gain_trim: Level correction so that materials match each other.
+        octave_shift: Whole octaves added to every note. Bodies that only
+            exist in one register, such as a bird call, use this to sit
+            where they belong; since an octave belongs to every scale, the
+            harmony of the system is preserved.
     """
 
     key: str
@@ -362,6 +365,7 @@ class Material:
     cutoff_ratio: float
     transient: Transient
     gain_trim: float = 1.0
+    octave_shift: int = 0
 
     def to_payload(self) -> dict[str, JsonValue]:
         return {
@@ -376,6 +380,7 @@ class Material:
             "cutoffRatio": self.cutoff_ratio,
             "transient": self.transient.to_payload(),
             "gainTrim": self.gain_trim,
+            "octaveShift": self.octave_shift,
         }
 
 

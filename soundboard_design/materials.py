@@ -16,7 +16,6 @@ from .domain import (
     ModalVoice,
     NoiseVoice,
     Partial,
-    StringVoice,
     Transient,
     WaveVoice,
     Waveform,
@@ -169,21 +168,35 @@ METAL = Material(
     gain_trim=0.80,
 )
 
+# NOTE: this used to be a Karplus-Strong feedback loop. The Web Audio
+# specification clamps any DelayNode inside a cycle to a full render quantum,
+# so every note above roughly 340 Hz was detuned onto the same pitch and the
+# loop gain was impossible to stage. The additive model below is exactly in
+# tune, silent at rest, and renders identically offline.
 STRING = Material(
     key="corde",
     label="Corde",
     family=MaterialFamily.RESONANT,
     description=(
-        "Une corde pincée, synthétisée par une ligne à retard bouclée. Un "
-        "souffle de six millisecondes excite la boucle et le filtre éteint "
-        "les aigus en premier, exactement comme une vraie corde."
+        "Une corde pincée près du chevalet. Les partiels sont harmoniques, "
+        "avec le creux caractéristique du cinquième dû à la position du "
+        "pincement, et les aigus s'éteignent bien avant le fondamental."
     ),
-    voice=StringVoice(excitation_seconds=0.006, damping_ratio=7.0, max_frequency=2200.0),
-    duration_factor=1.10,
-    attack_factor=0.40,
-    cutoff_ratio=6.0,
-    transient=Transient(tone_hz=2400.0, amount=0.35, resonance=1.0, decay_seconds=0.012),
-    gain_trim=0.90,
+    voice=ModalVoice(
+        waveform=Waveform.SINE,
+        partials=(
+            Partial(ratio=1.0, gain=1.0, decay=1.0),
+            Partial(ratio=2.002, gain=0.62, decay=0.60),
+            Partial(ratio=3.008, gain=0.34, decay=0.42),
+            Partial(ratio=4.020, gain=0.16, decay=0.28),
+            Partial(ratio=6.050, gain=0.09, decay=0.16),
+        ),
+    ),
+    duration_factor=1.05,
+    attack_factor=0.30,
+    cutoff_ratio=5.0,
+    transient=Transient(tone_hz=1600.0, amount=0.30, resonance=1.2, decay_seconds=0.010),
+    gain_trim=0.85,
 )
 
 
@@ -213,27 +226,30 @@ BUBBLE = Material(
     gain_trim=1.15,
 )
 
+# NOTE: the droplet arrives on its scale degree instead of leaving from it.
+# It keeps ringing after the sweep, so the pitch a listener retains is the
+# one it settles on. Sweeping away from the degree meant the audible pitch
+# belonged to no degree at all, and it clashed with everything else.
 DROPLET = Material(
     key="goutte",
     label="Goutte",
     family=MaterialFamily.LIQUID,
     description=(
-        "Une goutte qui tombe dans l'eau. Même montée que la bulle mais plus "
-        "ample et plus rapide, suivie d'une petite résonance qui reste dans "
-        "la pièce."
+        "Une goutte qui tombe dans l'eau. La hauteur monte en soixante "
+        "millisecondes jusqu'à la note, puis celle-ci résonne et s'éteint "
+        "lentement : ce ploc suspendu est ce qui la distingue de la bulle."
     ),
     voice=ChirpVoice(
         waveform=Waveform.SINE,
-        shape=ChirpShape.RISE,
-        depth=3.40,
-        time_ratio=0.45,
-        tail_gain=0.25,
+        shape=ChirpShape.RISE_TO,
+        depth=2.20,
+        time_ratio=0.26,
     ),
-    duration_factor=0.40,
-    attack_factor=0.80,
-    cutoff_ratio=8.0,
-    transient=Transient(tone_hz=2600.0, amount=0.30, resonance=1.4, decay_seconds=0.010),
-    gain_trim=1.05,
+    duration_factor=0.55,
+    attack_factor=0.70,
+    cutoff_ratio=6.0,
+    transient=Transient(tone_hz=2000.0, amount=0.22, resonance=1.5, decay_seconds=0.008),
+    gain_trim=1.0,
 )
 
 
@@ -241,28 +257,39 @@ DROPLET = Material(
 # Organic bodies
 # ----------------------------------------------------------------
 
+# NOTE: the level is held across the sweep rather than decaying from the
+# first millisecond. Without the hold, all the energy sits at the bottom of
+# the arc and the sweep happens in silence, which is why the syllable read
+# as a dull blip instead of a call.
 BIRD = Material(
     key="oiseau",
     label="Oiseau",
     family=MaterialFamily.ORGANIC,
     description=(
-        "Un petit cri d'oiseau. La hauteur monte puis redescend en arc, avec "
-        "un vibrato à 24 Hz qui lui donne son côté vivant. À réserver aux "
-        "événements rares : c'est un son qui attire l'oreille."
+        "Un cuicui de deux syllabes, deux octaves au-dessus du reste du "
+        "système. Chaque syllabe dure soixante millisecondes, monte d'une "
+        "octave et redescend plus bas qu'elle n'est partie, le niveau tenu "
+        "tout du long ; la seconde est plus basse et plus discrète, comme "
+        "dans un vrai appel."
     ),
     voice=ChirpVoice(
         waveform=Waveform.SINE,
         shape=ChirpShape.ARCH,
-        depth=1.90,
-        time_ratio=0.80,
-        vibrato_hz=24.0,
-        vibrato_cents=40.0,
+        depth=2.40,
+        time_ratio=0.95,
+        hold_ratio=0.55,
+        harmonic_gain=0.22,
+        vibrato_hz=55.0,
+        vibrato_cents=12.0,
+        repeats=2,
+        repeat_gap=0.45,
     ),
-    duration_factor=0.45,
-    attack_factor=1.20,
+    duration_factor=0.15,
+    attack_factor=3.0,
     cutoff_ratio=10.0,
-    transient=Transient(tone_hz=3000.0, amount=0.08, resonance=1.2, decay_seconds=0.008),
-    gain_trim=1.0,
+    transient=Transient(tone_hz=5000.0, amount=0.04, resonance=1.2, decay_seconds=0.005),
+    gain_trim=0.85,
+    octave_shift=2,
 )
 
 PAPER = Material(
